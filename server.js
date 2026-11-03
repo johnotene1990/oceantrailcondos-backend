@@ -46,6 +46,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 // TENANT / RENEWAL / PAYMENT HISTORY
 const tenancyRenewalRoutes = require("./routes/tenantRenewalRoutes");
 const paymentHistoryRoutes = require("./routes/paymentHistoryRoute");
+const tenantApplicationRoutes = require("./routes/tenantApplicationRoutes");
 
 // UTILITY / ELECTRICITY ROUTES
 const utilityRoutes = require("./routes/utilityRoutes");
@@ -55,6 +56,8 @@ const tenancyController = require("./controllers/tenancyController");
 const messageController = require("./controllers/messageController");
 const authMiddleware = require("./middleware/authMiddleware");
 const adminMiddleware = require("./middleware/adminMiddleware");
+
+const contactRoutes = require("./routes/contactRoutes");
 
 const sendAgreementByApartment =
   typeof tenancyController?.sendAgreementByApartment === "function"
@@ -99,7 +102,7 @@ connectDB();
 // ==========================================
 
 const allowedOrigins = [
-  "http://localhost:5173",
+  "https://oceantrailcondominium.com/",
   "http://localhost:3000",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:3000",
@@ -223,9 +226,12 @@ app.use(
   apartmentRoutes
 );
 
+app.use("/api/contact", contactRoutes);
 // ==========================================
 // TENANT REQUESTS
 // ==========================================
+// Mount the route
+app.use("/api/tenant", tenantApplicationRoutes);
 
 app.use(
   "/api/complaints",
