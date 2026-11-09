@@ -8,10 +8,10 @@ const submitApplication = async (req, res) => {
 
     const newApplication = await TenantApplication.create(applicationData);
 
-    if (process.env.COMPANY_EMAIL) {
+    if (process.env.SMTP_USER) {
       try {
         await sendEmail({
-          to: process.env.COMPANY_EMAIL,
+          to: process.env.SMTP_USER,
           subject: `New Tenant & Guarantor Application - ${newApplication.applicantName}`,
           html: `
             <div style="font-family: Arial, sans-serif; padding: 20px;">
@@ -21,6 +21,9 @@ const submitApplication = async (req, res) => {
               <p><strong>Email:</strong> ${newApplication.email}</p>
               <p><strong>Phone:</strong> ${newApplication.phone}</p>
               <p><strong>Guarantor Name:</strong> ${newApplication.guarantorName}</p>
+               <p><strong>Email:</strong> ${newApplication.guarantorgemail}</p>
+              <p><strong>Phone:</strong> ${newApplication.guarantorphone}</p>
+              <p><strong>Address:</strong> ${newApplication.guarantoraddress}</p>
               <p>Please check your admin dashboard to review this submission.</p>
             </div>
           `,

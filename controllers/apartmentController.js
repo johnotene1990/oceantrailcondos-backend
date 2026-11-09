@@ -600,172 +600,391 @@ const getAvailableTenants =
 // ASSIGN TENANT
 // ======================================================
 
-const assignTenant = async (
-  req,
-  res
-) => {
+// const assignTenant = async (
+//   req,
+//   res
+// ) => {
+//   try {
+//     const {
+//       tenantId,
+//       tenantEmail,
+//     } = req.body;
+
+//     if (!tenantId && !tenantEmail) {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "Tenant ID or tenant email is required.",
+//       });
+//     }
+
+//     const apartment =
+//       await Apartment.findById(
+//         req.params.id
+//       ).populate(
+//         "property",
+//         "landlord"
+//       );
+
+//     if (!apartment) {
+//       return res.status(404).json({
+//         success: false,
+//         message:
+//           "Apartment not found.",
+//       });
+//     }
+
+//     if (!apartment.property) {
+//       return res.status(404).json({
+//         success: false,
+//         message:
+//           "The property linked to this apartment no longer exists.",
+//       });
+//     }
+
+//     if (
+//       !isAdmin(req) &&
+//       apartment.property.landlord.toString() !==
+//         req.user._id.toString()
+//     ) {
+//       return res.status(403).json({
+//         success: false,
+//         message:
+//           "You do not have permission to assign this apartment.",
+//       });
+//     }
+
+//     let tenant;
+
+//     if (tenantId) {
+//       tenant =
+//         await User.findOne({
+//           _id: tenantId,
+//           role: "tenant",
+//           isActive: true,
+//         });
+//     } else {
+//       tenant =
+//         await User.findOne({
+//           email:
+//             tenantEmail
+//               .trim()
+//               .toLowerCase(),
+//           role: "tenant",
+//           isActive: true,
+//         });
+//     }
+
+//     if (!tenant) {
+//       return res.status(404).json({
+//         success: false,
+//         message:
+//           "Tenant not found.",
+//       });
+//     }
+
+//     // ==============================================
+//     // CHECK TENANT ALREADY HAS APARTMENT
+//     // ==============================================
+
+//     if (
+//       tenant.apartment &&
+//       String(tenant.apartment).trim() !==
+//         ""
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "This tenant is already assigned to an apartment.",
+//       });
+//     }
+
+//     // ==============================================
+//     // CHECK APARTMENT OCCUPANCY
+//     // ==============================================
+
+//     if (
+//       apartment.tenant ||
+//       apartment.status === "occupied"
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "This apartment is already occupied.",
+//       });
+//     }
+
+//     apartment.tenant =
+//       tenant._id;
+
+//     apartment.status =
+//       "occupied";
+
+//     await apartment.save();
+
+//     // ==============================================
+//     // UPDATE TENANT LEGACY FIELDS
+//     // ==============================================
+
+//     tenant.block =
+//       apartment.block || null;
+
+//     tenant.floor =
+//       apartment.floor || null;
+
+//     tenant.apartment =
+//       apartment.apartmentNumber;
+
+//     await tenant.save();
+
+//     const updated =
+//       await Apartment.findById(
+//         apartment._id
+//       )
+//         .populate(
+//           "property",
+//           "name address city state"
+//         )
+//         .populate(
+//           "tenant",
+//           "fullName email phone"
+//         );
+
+//     return res.status(200).json({
+//       success: true,
+//       message:
+//         "Tenant assigned successfully.",
+//       apartment: updated,
+//     });
+//   } catch (error) {
+//     console.error(
+//       "Assign tenant error:",
+//       error
+//     );
+
+//     return res.status(500).json({
+//       success: false,
+//       message:
+//         "Unable to assign tenant.",
+//     });
+//   }
+// };
+
+
+
+
+
+// ======================================================
+// ASSIGN TENANT - CORRECTED VERSION
+// ======================================================
+
+const assignTenant = async (req, res) => {
   try {
-    const {
-      tenantId,
-      tenantEmail,
-    } = req.body;
+    const { tenantId, tenantEmail } = req.body;
 
     if (!tenantId && !tenantEmail) {
       return res.status(400).json({
         success: false,
-        message:
-          "Tenant ID or tenant email is required.",
+        message: "Tenant ID or tenant email is required.",
       });
     }
 
-    const apartment =
-      await Apartment.findById(
-        req.params.id
-      ).populate(
-        "property",
-        "landlord"
-      );
+    // Find apartment and property
+    const apartment = await Apartment.findById(req.params.id)
+      .populate("property", "landlord");
 
     if (!apartment) {
       return res.status(404).json({
         success: false,
-        message:
-          "Apartment not found.",
+        message: "Apartment not found.",
       });
     }
 
     if (!apartment.property) {
       return res.status(404).json({
         success: false,
-        message:
-          "The property linked to this apartment no longer exists.",
+        message: "The property linked to this apartment no longer exists.",
       });
     }
 
+    // Verify permission
     if (
       !isAdmin(req) &&
-      apartment.property.landlord.toString() !==
-        req.user._id.toString()
+      String(apartment.property.landlord) !== String(req.user._id)
     ) {
       return res.status(403).json({
         success: false,
-        message:
-          "You do not have permission to assign this apartment.",
+        message: "You do not have permission to assign this apartment.",
       });
     }
 
+    // Find tenant
     let tenant;
 
     if (tenantId) {
-      tenant =
-        await User.findOne({
-          _id: tenantId,
-          role: "tenant",
-          isActive: true,
-        });
+      tenant = await User.findOne({
+        _id: tenantId,
+        role: "tenant",
+        isActive: true,
+      });
     } else {
-      tenant =
-        await User.findOne({
-          email:
-            tenantEmail
-              .trim()
-              .toLowerCase(),
-          role: "tenant",
-          isActive: true,
-        });
+      tenant = await User.findOne({
+        email: tenantEmail.trim().toLowerCase(),
+        role: "tenant",
+        isActive: true,
+      });
     }
 
     if (!tenant) {
       return res.status(404).json({
         success: false,
-        message:
-          "Tenant not found.",
+        message: "Tenant not found or inactive.",
       });
     }
 
-    // ==============================================
-    // CHECK TENANT ALREADY HAS APARTMENT
-    // ==============================================
+    // --------------------------------------------------
+    // CHECK WHETHER APARTMENT HAS A REAL TENANT
+    // --------------------------------------------------
+
+    if (apartment.tenant) {
+      const existingTenant = await User.findById(apartment.tenant);
+
+      if (existingTenant) {
+        return res.status(400).json({
+          success: false,
+          message: "This apartment already has a tenant.",
+        });
+      }
+
+      // The old tenant reference points to a deleted user.
+      // Repair the stale reference.
+      apartment.tenant = null;
+    }
+
+    // --------------------------------------------------
+    // CHECK WHETHER TENANT IS ALREADY LINKED ELSEWHERE
+    // --------------------------------------------------
+
+    const existingAssignment = await Apartment.findOne({
+      tenant: tenant._id,
+      _id: { $ne: apartment._id },
+    });
+
+    if (existingAssignment) {
+      return res.status(400).json({
+        success: false,
+        message: "This tenant is already assigned to another apartment.",
+      });
+    }
+
+    // --------------------------------------------------
+    // CHECK APARTMENT STATUS
+    // --------------------------------------------------
+
+    // "occupied" without a real tenant reference is stale.
+    // Repair it instead of rejecting a valid assignment.
+    if (
+      apartment.status === "maintenance" ||
+      apartment.status === "reserved"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `This apartment cannot be assigned because its status is ${apartment.status}.`,
+      });
+    }
+
+    // --------------------------------------------------
+    // CLEAR STALE TENANT DETAILS
+    // --------------------------------------------------
 
     if (
       tenant.apartment &&
-      String(tenant.apartment).trim() !==
-        ""
+      String(tenant.apartment).trim() !== ""
     ) {
-      return res.status(400).json({
+      // Only clear legacy fields if no actual apartment
+      // record currently references this tenant.
+      tenant.apartment = null;
+      tenant.block = null;
+      tenant.floor = null;
+    }
+
+    // --------------------------------------------------
+    // ATOMIC APARTMENT ASSIGNMENT
+    // --------------------------------------------------
+
+    const updatedApartment = await Apartment.findOneAndUpdate(
+      {
+        _id: apartment._id,
+        tenant: null,
+        status: { $in: ["available", "occupied"] },
+      },
+      {
+        $set: {
+          tenant: tenant._id,
+          status: "occupied",
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!updatedApartment) {
+      return res.status(409).json({
         success: false,
-        message:
-          "This tenant is already assigned to an apartment.",
+        message: "The apartment assignment has changed. Please refresh and try again.",
       });
     }
 
-    // ==============================================
-    // CHECK APARTMENT OCCUPANCY
-    // ==============================================
+    // --------------------------------------------------
+    // UPDATE TENANT INFORMATION
+    // --------------------------------------------------
 
-    if (
-      apartment.tenant ||
-      apartment.status === "occupied"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "This apartment is already occupied.",
-      });
+    try {
+      tenant.block = apartment.block || null;
+      tenant.floor = apartment.floor || null;
+      tenant.apartment = apartment.apartmentNumber;
+
+      await tenant.save();
+    } catch (tenantError) {
+      // Roll back apartment assignment if tenant update fails.
+      await Apartment.findOneAndUpdate(
+        {
+          _id: apartment._id,
+          tenant: tenant._id,
+        },
+        {
+          $set: {
+            tenant: null,
+            status: "available",
+          },
+        }
+      );
+
+      throw tenantError;
     }
 
-    apartment.tenant =
-      tenant._id;
+    // --------------------------------------------------
+    // RETURN UPDATED RECORD
+    // --------------------------------------------------
 
-    apartment.status =
-      "occupied";
-
-    await apartment.save();
-
-    // ==============================================
-    // UPDATE TENANT LEGACY FIELDS
-    // ==============================================
-
-    tenant.block =
-      apartment.block || null;
-
-    tenant.floor =
-      apartment.floor || null;
-
-    tenant.apartment =
-      apartment.apartmentNumber;
-
-    await tenant.save();
-
-    const updated =
-      await Apartment.findById(
-        apartment._id
-      )
-        .populate(
-          "property",
-          "name address city state"
-        )
-        .populate(
-          "tenant",
-          "fullName email phone"
-        );
+    const result = await Apartment.findById(apartment._id)
+      .populate("property", "name address city state")
+      .populate("tenant", "fullName email phone");
 
     return res.status(200).json({
       success: true,
-      message:
-        "Tenant assigned successfully.",
-      apartment: updated,
+      message: "Tenant assigned successfully.",
+      apartment: result,
     });
+
   } catch (error) {
-    console.error(
-      "Assign tenant error:",
-      error
-    );
+    console.error("Assign tenant error:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to assign tenant.",
+      message: error.message || "Unable to assign tenant.",
     });
   }
 };
