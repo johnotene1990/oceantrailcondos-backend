@@ -1,3 +1,190 @@
+// const express = require("express");
+// const multer = require("multer");
+
+// const {
+//   createRepairRequest,
+//   getTenantRepairRequests,
+//   getTenantRepairRequest,
+//   getLandlordRepairRequests,
+//   updateRepairRequest,
+
+//   // ==========================================
+//   // ADMIN REPAIR CONTROLLERS
+//   // ==========================================
+//   getAdminRepairRequests,
+//   adminUpdateRepairRequest,
+// } = require("../controllers/repairController");
+
+// const protect = require("../middleware/authMiddleware");
+// const adminOnly = require("../middleware/adminMiddleware");
+
+// const router = express.Router();
+
+// // ==========================================
+// // MULTER CONFIGURATION
+// // ==========================================
+// //
+// // Maximum image size: 5MB
+// // ==========================================
+
+// const upload = multer({
+//   storage: multer.memoryStorage(),
+
+//   limits: {
+//     fileSize: 5 * 1024 * 1024,
+//   },
+
+//   fileFilter: (req, file, cb) => {
+//     const allowedTypes = [
+//       "image/jpeg",
+//       "image/jpg",
+//       "image/png",
+//       "image/webp",
+//     ];
+
+//     if (!allowedTypes.includes(file.mimetype)) {
+//       return cb(
+//         new Error(
+//           "Only JPG, JPEG, PNG and WEBP images are allowed."
+//         )
+//       );
+//     }
+
+//     cb(null, true);
+//   },
+// });
+
+// // ==========================================
+// // AUTHENTICATION
+// // ==========================================
+// //
+// // All repair endpoints require a logged-in user.
+// // ==========================================
+
+// router.use(protect);
+
+// // ==========================================
+// // TENANT
+// // ==========================================
+
+// // CREATE REPAIR REQUEST
+// //
+// // IMPORTANT:
+// // upload.single("image") matches the frontend:
+// //
+// // formData.append("image", imageFile);
+// //
+// // The image is accepted but not permanently stored
+// // at this stage.
+// // ==========================================
+
+// router.post(
+//   "/",
+//   (req, res, next) => {
+//     upload.single("image")(req, res, (error) => {
+//       if (error) {
+//         console.error(
+//           "Repair image upload error:",
+//           error
+//         );
+
+//         return res.status(400).json({
+//           success: false,
+//           message: error.message,
+//         });
+//       }
+
+//       next();
+//     });
+//   },
+//   createRepairRequest
+// );
+
+// // GET ALL TENANT REPAIR REQUESTS
+// router.get(
+//   "/tenant",
+//   getTenantRepairRequests
+// );
+
+// // GET SINGLE TENANT REPAIR REQUEST
+// router.get(
+//   "/tenant/:id",
+//   getTenantRepairRequest
+// );
+
+// // ==========================================
+// // ADMIN
+// // ==========================================
+// //
+// // These routes are deliberately separate from
+// // the landlord routes.
+// //
+// // This allows the admin dashboard to see every
+// // repair request, regardless of landlord.
+// // ==========================================
+
+// // GET ALL REPAIR REQUESTS FOR ADMIN
+// router.get(
+//   "/admin",
+//   adminOnly,
+//   getAdminRepairRequests
+// );
+
+// // ADMIN RESPOND / UPDATE REPAIR REQUEST
+// router.put(
+//   "/admin/:id",
+//   adminOnly,
+//   adminUpdateRepairRequest
+// );
+
+// // ==========================================
+// // LANDLORD
+// // ==========================================
+
+// // GET LANDLORD REPAIR REQUESTS
+// router.get(
+//   "/landlord",
+//   getLandlordRepairRequests
+// );
+
+// // LANDLORD UPDATE REPAIR REQUEST
+// router.put(
+//   "/:id",
+//   updateRepairRequest
+// );
+
+// // ==========================================
+// // MULTER ERROR HANDLING
+// // ==========================================
+// //
+// // Handles any Multer error that somehow reaches
+// // the router.
+// // ==========================================
+
+// router.use((error, req, res, next) => {
+//   if (error instanceof multer.MulterError) {
+//     console.error(
+//       "Multer repair error:",
+//       error
+//     );
+
+//     return res.status(400).json({
+//       success: false,
+//       message:
+//         error.message ||
+//         "Repair image upload failed.",
+//     });
+//   }
+
+//   next(error);
+// });
+
+// module.exports = router;
+
+
+
+
+
 const express = require("express");
 const multer = require("multer");
 
@@ -8,11 +195,12 @@ const {
   getLandlordRepairRequests,
   updateRepairRequest,
 
-  // ==========================================
   // ADMIN REPAIR CONTROLLERS
-  // ==========================================
   getAdminRepairRequests,
   adminUpdateRepairRequest,
+
+  // REPAIR CONVERSATION
+  addRepairMessage,
 } = require("../controllers/repairController");
 
 const protect = require("../middleware/authMiddleware");
@@ -20,43 +208,42 @@ const adminOnly = require("../middleware/adminMiddleware");
 
 const router = express.Router();
 
-// ==========================================
+// ======================================================
 // MULTER CONFIGURATION
-// ==========================================
-//
-// The tenant repair page submits FormData because
-// it can contain an optional image.
-//
-// We use memoryStorage for now because the current
-// RepairRequest model does not need to permanently
-// store the image.
-//
-// This allows req.body to be correctly populated
-// from multipart/form-data without changing the
-// tenant UI.
-//
-// Maximum image size: 5MB
-// ==========================================
+// ======================================================
+
+const allowedMimeTypes = [
+  // Images
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+
+  // Videos
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+
+  // Documents
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
 
 const upload = multer({
   storage: multer.memoryStorage(),
 
   limits: {
-    fileSize: 5 * 1024 * 1024,
+    fileSize: 20 * 1024 * 1024, // 20MB per file
+    files: 10, // Maximum 10 files per request
   },
 
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "image/webp",
-    ];
-
-    if (!allowedTypes.includes(file.mimetype)) {
+    if (!allowedMimeTypes.includes(file.mimetype)) {
       return cb(
         new Error(
-          "Only JPG, JPEG, PNG and WEBP images are allowed."
+          "Unsupported file type. Upload JPG, PNG, WEBP, GIF, MP4, WEBM, MOV, PDF, DOC or DOCX files."
         )
       );
     }
@@ -65,125 +252,180 @@ const upload = multer({
   },
 });
 
-// ==========================================
-// AUTHENTICATION
-// ==========================================
+// ======================================================
+// UPLOAD FIELDS
+// ======================================================
 //
-// All repair endpoints require a logged-in user.
-// ==========================================
+// Supports the existing frontend field:
+// image
+//
+// Also supports:
+// attachments
+// video
+// videos
+// file
+//
+// This allows older frontend code to continue working.
+// ======================================================
+
+const repairUploadFields = upload.fields([
+  {
+    name: "image",
+    maxCount: 10,
+  },
+  {
+    name: "attachments",
+    maxCount: 10,
+  },
+  {
+    name: "video",
+    maxCount: 10,
+  },
+  {
+    name: "videos",
+    maxCount: 10,
+  },
+  {
+    name: "file",
+    maxCount: 10,
+  },
+]);
+
+// ======================================================
+// UPLOAD ERROR HANDLER
+// ======================================================
+
+const handleRepairUploads = (req, res, next) => {
+  repairUploadFields(req, res, (error) => {
+    if (error) {
+      console.error("Repair upload error:", error);
+
+      return res.status(400).json({
+        success: false,
+        message:
+          error.message ||
+          "Repair attachment upload failed.",
+      });
+    }
+
+    next();
+  });
+};
+
+// ======================================================
+// AUTHENTICATION
+// ======================================================
+//
+// All repair endpoints require authentication.
+// ======================================================
 
 router.use(protect);
 
-// ==========================================
+// ======================================================
 // TENANT
-// ==========================================
+// ======================================================
 
 // CREATE REPAIR REQUEST
 //
-// IMPORTANT:
-// upload.single("image") matches the frontend:
+// Accepts repair details and uploaded attachments.
 //
+// Existing frontend usage remains supported:
 // formData.append("image", imageFile);
 //
-// The image is accepted but not permanently stored
-// at this stage.
-// ==========================================
+// New frontend usage:
+// formData.append("attachments", file);
+// ======================================================
 
 router.post(
   "/",
-  (req, res, next) => {
-    upload.single("image")(req, res, (error) => {
-      if (error) {
-        console.error(
-          "Repair image upload error:",
-          error
-        );
-
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      next();
-    });
-  },
+  handleRepairUploads,
   createRepairRequest
 );
 
 // GET ALL TENANT REPAIR REQUESTS
+
 router.get(
   "/tenant",
   getTenantRepairRequests
 );
 
 // GET SINGLE TENANT REPAIR REQUEST
+
 router.get(
   "/tenant/:id",
   getTenantRepairRequest
 );
 
-// ==========================================
+// ======================================================
+// REPAIR CONVERSATION
+// ======================================================
+//
+// Tenants, landlords and authorised management users
+// can send messages and attachments.
+//
+// The controller checks whether the logged-in user
+// is allowed to access the particular repair request.
+// ======================================================
+
+router.post(
+  "/:id/messages",
+  handleRepairUploads,
+  addRepairMessage
+);
+
+// ======================================================
 // ADMIN
-// ==========================================
-//
-// These routes are deliberately separate from
-// the landlord routes.
-//
-// This allows the admin dashboard to see every
-// repair request, regardless of landlord.
-// ==========================================
+// ======================================================
 
 // GET ALL REPAIR REQUESTS FOR ADMIN
+
 router.get(
   "/admin",
   adminOnly,
   getAdminRepairRequests
 );
 
-// ADMIN RESPOND / UPDATE REPAIR REQUEST
+// ADMIN UPDATE REPAIR REQUEST
+
 router.put(
   "/admin/:id",
   adminOnly,
+  handleRepairUploads,
   adminUpdateRepairRequest
 );
 
-// ==========================================
+// ======================================================
 // LANDLORD
-// ==========================================
+// ======================================================
 
 // GET LANDLORD REPAIR REQUESTS
+
 router.get(
   "/landlord",
   getLandlordRepairRequests
 );
 
 // LANDLORD UPDATE REPAIR REQUEST
+
 router.put(
   "/:id",
+  handleRepairUploads,
   updateRepairRequest
 );
 
-// ==========================================
+// ======================================================
 // MULTER ERROR HANDLING
-// ==========================================
-//
-// Handles any Multer error that somehow reaches
-// the router.
-// ==========================================
+// ======================================================
 
 router.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
-    console.error(
-      "Multer repair error:",
-      error
-    );
+    console.error("Multer repair error:", error);
 
     return res.status(400).json({
       success: false,
       message:
         error.message ||
-        "Repair image upload failed.",
+        "Repair attachment upload failed.",
     });
   }
 
