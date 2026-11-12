@@ -47,13 +47,12 @@
 
 
 
-
-
 const express = require("express");
 
 const {
   createApartment,
   getMyApartments,
+  getTenantApartment,
   getApartmentsByProperty,
   getApartment,
   updateApartment,
@@ -67,13 +66,18 @@ const protect = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
+// ======================================================
+// AUTHENTICATION
+// All apartment routes require authentication.
+// ======================================================
+
 router.use(protect);
 
 // ======================================================
 // APARTMENTS
 // ======================================================
 
-// CREATE
+// CREATE APARTMENT
 router.post("/", createApartment);
 
 // GET ALL LANDLORD APARTMENTS
@@ -82,20 +86,33 @@ router.get("/", getMyApartments);
 // GET LANDLORD APARTMENTS FOR DASHBOARD
 router.get("/landlord", getMyApartments);
 
-// STATIC / SPECIFIC ROUTES
-// Must be placed ABOVE /:id routes.
+// GET LOGGED-IN TENANT'S ASSIGNED APARTMENT
+router.get("/tenant", getTenantApartment);
+
+// GET AVAILABLE TENANTS
 router.get("/tenants/available", getAvailableTenants);
+
+// GET APARTMENTS BELONGING TO A PROPERTY
 router.get("/property/:propertyId", getApartmentsByProperty);
 
-// PARAMETERIZED ROUTES
+// ======================================================
+// PARAMETERIZED APARTMENT ROUTES
+// Keep these below all static routes.
+// ======================================================
+
+// GET SINGLE APARTMENT
 router.get("/:id", getApartment);
 
-// UPDATE & DELETE
+// UPDATE APARTMENT
 router.put("/:id", updateApartment);
+
+// DELETE APARTMENT
 router.delete("/:id", deleteApartment);
 
-// ASSIGN / UNASSIGN TENANT
+// ASSIGN TENANT
 router.put("/:id/assign-tenant", assignTenant);
+
+// UNASSIGN TENANT
 router.put("/:id/unassign-tenant", unassignTenant);
 
 module.exports = router;
