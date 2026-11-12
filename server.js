@@ -521,6 +521,7 @@ const apartmentRoutes = require("./routes/apartmentRoutes");
 const complaintRoutes = require("./routes/complaintRoutes");
 const repairRoutes = require("./routes/repairRoutes");
 const tenancyDocumentRoutes = require("./routes/tenancyDocumentRoutes");
+const rentPaymentRoutes = require("./routes/rentPaymentRoutes");
 
 // SERVICE CHARGE ROUTES
 const serviceChargeRoutes = require("./routes/serviceChargeRoutes");
@@ -716,6 +717,7 @@ app.use(
 );
 
 app.use("/api/contact", contactRoutes);
+app.use("/api/rent-payments", rentPaymentRoutes);
 
 // ==========================================
 // TENANT REQUESTS

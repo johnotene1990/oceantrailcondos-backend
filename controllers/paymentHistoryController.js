@@ -1,17 +1,6 @@
 const ServiceCharge = require("../models/ServiceCharge");
 const UtilityBillPayment = require("../models/UtilityBill");
 
-/**
- * GET
- * /api/payment-history
- *
- * Returns combined payment history for
- * the logged-in tenant.
- *
- * Includes:
- * - Service charges
- * - Utility payments
- */
 const getPaymentHistory = async (
   req,
   res
