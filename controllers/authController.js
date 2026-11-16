@@ -1037,8 +1037,6 @@
 //   resetPassword,
 // };
 
-
-
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
@@ -1196,191 +1194,144 @@ const registerUser = async (req, res) => {
     // SIGN-IN URL FOR CLIENT EMAIL
     // ========================================
 
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
-    const signInUrl = `${clientUrl}/login?role=${user.role}`;
+    // Set CLIENT_URL in the deployed backend environment to the live
+    // frontend origin, for example: https://your-ocean-trail-domain.com
+    const configuredClientUrl =
+      process.env.CLIENT_URL || process.env.FRONTEND_URL ||
+      (process.env.NODE_ENV === "production" ? "" : "http://localhost:5173");
+
+    if (!configuredClientUrl) {
+      throw new Error(
+        "CLIENT_URL is missing. Set CLIENT_URL to the live Ocean Trail frontend URL in the backend environment."
+      );
+    }
+
+    const clientUrl = configuredClientUrl.replace(/\/+$/, "");
+    const signInUrl = `${clientUrl}/login?role=${encodeURIComponent(user.role)}`;
+
+    // Escape user-provided values before inserting them into HTML email.
+    const escapeHtml = (value = "") =>
+      String(value).replace(/[&<>"']/g, (character) => {
+        const entities = {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        };
+        return entities[character];
+      });
+
+    const safeName = escapeHtml(user.fullName);
+    const safeEmail = escapeHtml(user.email);
+    const safePhone = escapeHtml(user.phone || "N/A");
+    const safeRole = escapeHtml(user.role);
 
     // ========================================
     // WELCOME EMAIL WITH SIGN-IN LINK
     // ========================================
 
     const welcomeEmail = `
-      <div style="
-        font-family: Arial, sans-serif;
-        max-width: 650px;
-        margin: auto;
-        padding: 30px;
-        color: #000;
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-      ">
-
-        <h2 style="color: #4B4F93; margin-top: 0;">
-          Ocean Trail Condominium
-        </h2>
-
-        <h3>
-          Welcome, ${user.fullName}!
-        </h3>
-
-        <p>
-          Your Ocean Trail Condominium account has been successfully created. You can now sign in to your portal to manage your property services and communications.
-        </p>
-
-        <div style="
-          background: #f5f5f5;
-          padding: 20px;
-          border-radius: 8px;
-          margin: 25px 0;
-        ">
-
-          <p style="margin: 5px 0;">
-            <strong>Name:</strong>
-            ${user.fullName}
-          </p>
-
-          <p style="margin: 5px 0;">
-            <strong>Email:</strong>
-            ${user.email}
-          </p>
-
-          <p style="margin: 5px 0;">
-            <strong>Phone:</strong>
-            ${user.phone || "N/A"}
-          </p>
-
-          <p style="margin: 5px 0;">
-            <strong>Account Type:</strong>
-            ${user.role}
-          </p>
-
+      <div style="font-family:Arial,sans-serif;max-width:650px;margin:auto;padding:30px;color:#000;background:#fff;border:1px solid #e0e0e0;border-radius:8px;">
+        <h2 style="color:#4B4F93;margin-top:0;">Ocean Trail Condominium</h2>
+        <h3>Welcome, ${safeName}!</h3>
+        <p>Your Ocean Trail Condominium account has been successfully created. You can now sign in to your portal.</p>
+        <div style="background:#f5f5f5;padding:20px;border-radius:8px;margin:25px 0;">
+          <p><strong>Name:</strong> ${safeName}</p>
+          <p><strong>Email:</strong> ${safeEmail}</p>
+          <p><strong>Phone:</strong> ${safePhone}</p>
+          <p><strong>Account Type:</strong> ${safeRole}</p>
         </div>
-
-        <div style="text-align: center; margin: 30px 0;">
-          <a
-            href="${signInUrl}"
-            style="
-              background-color: #4B4F93;
-              color: white;
-              padding: 14px 28px;
-              text-decoration: none;
-              border-radius: 6px;
-              font-weight: bold;
-              display: inline-block;
-            "
-          >
+        <div style="text-align:center;margin:30px 0;">
+          <a href="${signInUrl}" style="background:#4B4F93;color:#fff;padding:14px 28px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
             Sign In to Your Account
           </a>
         </div>
-
-        <p style="font-size: 13px; color: #555; word-break: break-all;">
-          If the button above doesn't work, copy and paste this link into your browser:<br />
-          <a href="${signInUrl}" style="color: #4B4F93;">${signInUrl}</a>
+        <p style="font-size:13px;color:#555;word-break:break-all;">
+          If the button does not work, copy and paste this link into your browser:<br />
+          <a href="${signInUrl}" style="color:#4B4F93;">${signInUrl}</a>
         </p>
-
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #e0e0e0;" />
-
-        <p style="font-size: 12px; color: #777;">
+        <hr style="margin:30px 0;border:none;border-top:1px solid #e0e0e0;" />
+        <p style="font-size:12px;color:#777;">
           Ocean Trail Condominium<br />
           2 Prince Babatunde Oloto Street, Off Mayor Bolaji Ariyo Street, Bevera Estate, Ilasan, Lekki, Lagos State.
         </p>
-
       </div>
     `;
+
+    const welcomeText = [
+      `Welcome to Ocean Trail Condominium, ${user.fullName}!`,
+      "Your account has been successfully created.",
+      `Account type: ${user.role}`,
+      "Sign in using this link:",
+      signInUrl,
+      "If you did not create this account, please contact Ocean Trail management.",
+    ].join("\n\n");
 
     // ========================================
     // ADMIN EMAIL
     // ========================================
 
     const adminEmail = `
-      <div style="
-        font-family: Arial, sans-serif;
-        max-width: 700px;
-        margin: auto;
-        padding: 30px;
-        color: #000;
-      ">
-
-        <h2 style="color: #4B4F93;">
-          Ocean Trail Condominium
-        </h2>
-
-        <h3>
-          New ${user.role.toUpperCase()} Registration
-        </h3>
-
-        <p>
-          A new ${user.role} has registered on the Ocean Trail platform.
-        </p>
-
-        <div style="
-          background: #f5f5f5;
-          padding: 20px;
-          border-radius: 8px;
-          margin-top: 20px;
-        ">
-
-          <p>
-            <strong>Full Name:</strong>
-            ${user.fullName}
-          </p>
-
-          <p>
-            <strong>Email:</strong>
-            ${user.email}
-          </p>
-
-          <p>
-            <strong>Phone:</strong>
-            ${user.phone || "N/A"}
-          </p>
-
-          <p>
-            <strong>Account Type:</strong>
-            ${user.role}
-          </p>
-
-          <p>
-            <strong>Registration Date:</strong>
-            ${new Date().toLocaleString()}
-          </p>
-
+      <div style="font-family:Arial,sans-serif;max-width:700px;margin:auto;padding:30px;color:#000;">
+        <h2 style="color:#4B4F93;">Ocean Trail Condominium</h2>
+        <h3>New ${safeRole.toUpperCase()} Registration</h3>
+        <p>A new ${safeRole} has registered on the Ocean Trail platform.</p>
+        <div style="background:#f5f5f5;padding:20px;border-radius:8px;margin-top:20px;">
+          <p><strong>Full Name:</strong> ${safeName}</p>
+          <p><strong>Email:</strong> ${safeEmail}</p>
+          <p><strong>Phone:</strong> ${safePhone}</p>
+          <p><strong>Account Type:</strong> ${safeRole}</p>
+          <p><strong>Registration Date:</strong> ${new Date().toLocaleString()}</p>
         </div>
-
       </div>
     `;
 
     // ========================================
-    // EMAILS IN BACKGROUND
+    // SEND TENANT/LANDLORD EMAIL BEFORE REPORTING SUCCESS
     // ========================================
 
-    Promise.all([
-      sendEmail({
-        to: user.email,
-        subject:
-          "Welcome to Ocean Trail Condominium - Sign In",
-        html: welcomeEmail,
-      }),
+    let welcomeEmailSent = false;
 
-      process.env.COMPANY_EMAIL ? sendEmail({
-        to: process.env.COMPANY_EMAIL,
-        subject:
-          `New ${user.role.toUpperCase()} Registration - ${user.fullName}`,
-        html: adminEmail,
-        replyTo: user.email,
-      }) : Promise.resolve(),
-    ])
-      .then(() => {
-        console.log(
-          `Registration emails sent for ${user.email}`
-        );
-      })
-      .catch((emailError) => {
-        console.error(
-          "Registration email error:",
-          emailError.message
-        );
+    try {
+      const emailResult = await sendEmail({
+        to: user.email,
+        subject: "Welcome to Ocean Trail Condominium - Sign In",
+        html: welcomeEmail,
+        text: welcomeText,
       });
+
+      welcomeEmailSent = true;
+      console.log(
+        `Welcome email accepted by SMTP for ${user.email}. Message ID: ${emailResult.messageId || "not provided"}`
+      );
+    } catch (emailError) {
+      // The account is already saved. Do not pretend that the email was sent.
+      console.error("WELCOME EMAIL FAILED:", {
+        recipient: user.email,
+        message: emailError.message,
+        code: emailError.code,
+        response: emailError.response,
+      });
+    }
+
+    // Admin notification is independent; its failure must not stop the
+    // tenant/landlord welcome email or registration response.
+    if (process.env.COMPANY_EMAIL) {
+      try {
+        await sendEmail({
+          to: process.env.COMPANY_EMAIL,
+          subject: `New ${user.role.toUpperCase()} Registration - ${user.fullName}`,
+          html: adminEmail,
+          replyTo: user.email,
+        });
+      } catch (adminEmailError) {
+        console.error(
+          "ADMIN REGISTRATION EMAIL FAILED:",
+          adminEmailError.message
+        );
+      }
+    }
 
     // ========================================
     // RESPONSE
@@ -1388,7 +1339,11 @@ const registerUser = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "Your Ocean Trail Condominium account has been successfully created. Kindly check your email to sign in.",
+      message: welcomeEmailSent
+        ? "Your Ocean Trail Condominium account has been created and the sign-in email has been sent. Please check your inbox and spam/junk folder."
+        : "Your account has been created, but we could not send the sign-in email. You can sign in using the website, and management should check the backend email configuration.",
+      emailSent: welcomeEmailSent,
+      signInUrl,
       user: {
         id: user._id,
         fullName: user.fullName,
@@ -1402,10 +1357,7 @@ const registerUser = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(
-      "Register error:",
-      error
-    );
+    console.error("Register error:", error);
 
     return res.status(500).json({
       success: false,
