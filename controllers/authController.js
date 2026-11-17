@@ -1901,11 +1901,9 @@ const registerUser = async (req, res) => {
     });
 
     // ========================================
-    // BUILD THE REAL FRONTEND SIGN-IN LINK
+    // BUILD FRONTEND SIGN-IN LINK
     // ========================================
 
-    // Set CLIENT_URL in Render to the public frontend origin.
-    // Example: https://oceantrailcondominium.com
     const configuredClientUrl =
       process.env.CLIENT_URL ||
       process.env.FRONTEND_URL ||
@@ -1914,11 +1912,15 @@ const registerUser = async (req, res) => {
         : "http://localhost:5173");
 
     const clientUrl = configuredClientUrl.replace(/\/+$/, "");
+
     const signInUrl = `${clientUrl}/login?role=${encodeURIComponent(
       createdUser.role
     )}`;
 
-    // Safely encode user information before placing it in HTML.
+    // ========================================
+    // ESCAPE HTML VALUES
+    // ========================================
+
     const escapeHtml = (value = "") =>
       String(value).replace(/[&<>"']/g, (character) => {
         const entities = {
@@ -1928,6 +1930,7 @@ const registerUser = async (req, res) => {
           '"': "&quot;",
           "'": "&#39;",
         };
+
         return entities[character];
       });
 
@@ -1937,7 +1940,7 @@ const registerUser = async (req, res) => {
     const safeRole = escapeHtml(createdUser.role);
 
     // ========================================
-    // WELCOME EMAIL WITH CLICKABLE SIGN-IN LINK
+    // WELCOME EMAIL WITH SIGN-IN LINK
     // ========================================
 
     const welcomeEmail = `
@@ -1945,9 +1948,15 @@ const registerUser = async (req, res) => {
       <html>
         <body style="margin:0;padding:24px;background:#f5f5f5;font-family:Arial,sans-serif;color:#222;">
           <div style="max-width:620px;margin:0 auto;background:#ffffff;padding:30px;border-radius:10px;border:1px solid #e5e5e5;">
-            <h2 style="color:#4B4F93;margin-top:0;">Ocean Trail Condominium</h2>
+
+            <h2 style="color:#4B4F93;margin-top:0;">
+              Ocean Trail Condominium
+            </h2>
+
             <h3>Welcome, ${safeName}!</h3>
+
             <p>Your Ocean Trail Condominium account has been created successfully.</p>
+
             <p>You can now access your account using the sign-in button below.</p>
 
             <div style="background:#f7f7f9;padding:18px;border-radius:8px;margin:22px 0;">
@@ -1958,22 +1967,31 @@ const registerUser = async (req, res) => {
             </div>
 
             <div style="text-align:center;margin:28px 0;">
-              <a href="${signInUrl}"
-                 style="display:inline-block;background:#4B4F93;color:#ffffff;text-decoration:none;padding:14px 30px;border-radius:6px;font-weight:bold;">
+              <a
+                href="${signInUrl}"
+                style="display:inline-block;background:#4B4F93;color:#ffffff;text-decoration:none;padding:14px 30px;border-radius:6px;font-weight:bold;"
+              >
                 SIGN IN TO YOUR ACCOUNT
               </a>
             </div>
 
-            <p style="font-size:13px;color:#555;">If the button does not work, copy and paste this link into your browser:</p>
+            <p style="font-size:13px;color:#555;">
+              If the button does not work, copy and paste this link into your browser:
+            </p>
+
             <p style="font-size:13px;word-break:break-all;">
-              <a href="${signInUrl}" style="color:#4B4F93;">${signInUrl}</a>
+              <a href="${signInUrl}" style="color:#4B4F93;">
+                ${signInUrl}
+              </a>
             </p>
 
             <hr style="border:0;border-top:1px solid #e5e5e5;margin:28px 0;" />
+
             <p style="font-size:12px;color:#777;margin-bottom:0;">
               Ocean Trail Condominium<br />
               Property Management
             </p>
+
           </div>
         </body>
       </html>
@@ -1989,120 +2007,157 @@ const registerUser = async (req, res) => {
     ].join("\n\n");
 
     // ========================================
-    // SEND WELCOME EMAIL AND WAIT FOR SMTP RESULT
+    // DISPATCH REGISTRATION EMAILS IN BACKGROUND
     // ========================================
 
-    let welcomeEmailSent = false;
-    let emailErrorMessage = null;
+    // Do not make the registration HTTP request wait for SMTP.
+    // Account creation and auto-login succeed even if email delivery fails.
+    // These sends are best-effort. A persistent email queue is needed
+    // for guaranteed retries after a server restart.
 
-    try {
-      if (typeof sendEmail !== "function") {
-        throw new Error(
-          "sendEmail is not a function. Check ../utils/sendEmail export."
-        );
-      }
+    const companyEmail = process.env.COMPANY_EMAIL;
 
-      const emailResult = await sendEmail({
-        to: createdUser.email,
-        subject: "Welcome to Ocean Trail Condominium - Your Sign-In Link",
-        html: welcomeEmail,
-        text: welcomeText,
+    setImmediate(() => {
+      const sendRegistrationEmails = async () => {
+        // ------------------------------------
+        // WELCOME EMAIL
+        // ------------------------------------
+
+        const welcomeTask = (async () => {
+          try {
+            if (typeof sendEmail !== "function") {
+              throw new Error(
+                "sendEmail is not a function. Check ../utils/sendEmail export."
+              );
+            }
+
+            const emailResult = await sendEmail({
+              to: createdUser.email,
+              subject: "Welcome to Ocean Trail Condominium - Your Sign-In Link",
+              html: welcomeEmail,
+              text: welcomeText,
+            });
+
+            if (
+              emailResult &&
+              Array.isArray(emailResult.accepted) &&
+              emailResult.accepted.length === 0
+            ) {
+              throw new Error(
+                `SMTP did not accept the recipient ${createdUser.email}.`
+              );
+            }
+
+            if (
+              emailResult &&
+              Array.isArray(emailResult.rejected) &&
+              emailResult.rejected.some(
+                (recipient) =>
+                  String(recipient).toLowerCase() ===
+                  createdUser.email.toLowerCase()
+              )
+            ) {
+              throw new Error(
+                `SMTP rejected the recipient ${createdUser.email}.`
+              );
+            }
+
+            console.log("OCEAN TRAIL WELCOME EMAIL ACCEPTED:", {
+              recipient: createdUser.email,
+              role: createdUser.role,
+              messageId: emailResult?.messageId || "Not returned",
+            });
+
+          } catch (emailError) {
+            console.error("OCEAN TRAIL WELCOME EMAIL FAILED:", {
+              recipient: createdUser.email,
+              message: emailError.message,
+              code: emailError.code,
+              command: emailError.command,
+              response: emailError.response,
+              responseCode: emailError.responseCode,
+            });
+          }
+        })();
+
+        // ------------------------------------
+        // MANAGEMENT REGISTRATION NOTIFICATION
+        // ------------------------------------
+
+        const managementTask = (async () => {
+          if (!companyEmail) {
+            console.log(
+              "COMPANY_EMAIL is not configured; skipping management notification."
+            );
+            return;
+          }
+
+          const adminEmail = `
+            <div style="font-family:Arial,sans-serif;max-width:650px;margin:auto;padding:28px;color:#222;">
+
+              <h2 style="color:#4B4F93;">
+                Ocean Trail Condominium
+              </h2>
+
+              <h3>New ${safeRole} Registration</h3>
+
+              <p>A new user has registered on the Ocean Trail platform.</p>
+
+              <div style="background:#f7f7f9;padding:18px;border-radius:8px;">
+
+                <p><strong>Full name:</strong> ${safeName}</p>
+                <p><strong>Email:</strong> ${safeEmail}</p>
+                <p><strong>Phone:</strong> ${safePhone}</p>
+                <p><strong>Account type:</strong> ${safeRole}</p>
+
+                <p>
+                  <strong>Registration date:</strong>
+                  ${new Date().toLocaleString()}
+                </p>
+
+              </div>
+            </div>
+          `;
+
+          try {
+            await sendEmail({
+              to: companyEmail,
+              subject: `New ${createdUser.role.toUpperCase()} Registration - ${createdUser.fullName}`,
+              html: adminEmail,
+              text: `New ${createdUser.role} registration: ${createdUser.fullName} (${createdUser.email}).`,
+              replyTo: createdUser.email,
+            });
+
+            console.log(
+              "OCEAN TRAIL MANAGEMENT NOTIFICATION SENT:",
+              companyEmail
+            );
+
+          } catch (adminEmailError) {
+            console.error("OCEAN TRAIL ADMIN NOTIFICATION FAILED:", {
+              recipient: companyEmail,
+              message: adminEmailError.message,
+              code: adminEmailError.code,
+              command: adminEmailError.command,
+              response: adminEmailError.response,
+              responseCode: adminEmailError.responseCode,
+            });
+          }
+        })();
+
+        await Promise.allSettled([
+          welcomeTask,
+          managementTask,
+        ]);
+      };
+
+      sendRegistrationEmails().catch((error) => {
+        console.error("REGISTRATION EMAIL DISPATCH ERROR:", error);
       });
-
-      // Check whether SMTP rejected the recipient.
-      if (
-        emailResult &&
-        Array.isArray(emailResult.accepted) &&
-        emailResult.accepted.length === 0
-      ) {
-        throw new Error(
-          `SMTP did not accept the recipient ${createdUser.email}.`
-        );
-      }
-
-      if (
-        emailResult &&
-        Array.isArray(emailResult.rejected) &&
-        emailResult.rejected.some(
-          (recipient) =>
-            String(recipient).toLowerCase() ===
-            createdUser.email.toLowerCase()
-        )
-      ) {
-        throw new Error(
-          `SMTP rejected the recipient ${createdUser.email}.`
-        );
-      }
-
-      welcomeEmailSent = true;
-
-      console.log("========================================");
-      console.log("OCEAN TRAIL WELCOME EMAIL ACCEPTED");
-      console.log("Recipient:", createdUser.email);
-      console.log("Role:", createdUser.role);
-      console.log("Message ID:", emailResult?.messageId || "Not returned");
-      console.log("Sign-in URL:", signInUrl);
-      console.log("========================================");
-    } catch (emailError) {
-      emailErrorMessage = emailError.message;
-
-      console.error("OCEAN TRAIL WELCOME EMAIL FAILED:", {
-        recipient: createdUser.email,
-        message: emailError.message,
-        code: emailError.code,
-        command: emailError.command,
-        response: emailError.response,
-        responseCode: emailError.responseCode,
-      });
-    }
+    });
 
     // ========================================
-    // SEND MANAGEMENT NOTIFICATION SEPARATELY
-    // ========================================
-
-    if (process.env.COMPANY_EMAIL) {
-      const adminEmail = `
-        <div style="font-family:Arial,sans-serif;max-width:650px;margin:auto;padding:28px;color:#222;">
-          <h2 style="color:#4B4F93;">Ocean Trail Condominium</h2>
-          <h3>New ${safeRole} Registration</h3>
-          <p>A new user has registered on the Ocean Trail platform.</p>
-          <div style="background:#f7f7f9;padding:18px;border-radius:8px;">
-            <p><strong>Full name:</strong> ${safeName}</p>
-            <p><strong>Email:</strong> ${safeEmail}</p>
-            <p><strong>Phone:</strong> ${safePhone}</p>
-            <p><strong>Account type:</strong> ${safeRole}</p>
-            <p><strong>Registration date:</strong> ${new Date().toLocaleString()}</p>
-            <p><strong>Welcome email accepted:</strong> ${welcomeEmailSent ? "Yes" : "No"}</p>
-          </div>
-        </div>
-      `;
-
-      try {
-        await sendEmail({
-          to: process.env.COMPANY_EMAIL,
-          subject: `New ${createdUser.role.toUpperCase()} Registration - ${createdUser.fullName}`,
-          html: adminEmail,
-          text: `New ${createdUser.role} registration: ${createdUser.fullName} (${createdUser.email}). Welcome email accepted: ${welcomeEmailSent}.`,
-          replyTo: createdUser.email,
-        });
-
-        console.log(
-          `Ocean Trail management notification sent to ${process.env.COMPANY_EMAIL}`
-        );
-      } catch (adminEmailError) {
-        console.error(
-          "OCEAN TRAIL ADMIN NOTIFICATION FAILED:",
-          adminEmailError.message
-        );
-      }
-    } else {
-      console.log(
-        "COMPANY_EMAIL is not configured; skipping management notification."
-      );
-    }
-
-    // ========================================
-    // KEEP THE EXISTING AUTO-LOGIN BEHAVIOUR
+    // KEEP EXISTING AUTO-LOGIN BEHAVIOUR
     // ========================================
 
     const token = generateToken(createdUser._id);
@@ -2115,10 +2170,9 @@ const registerUser = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: welcomeEmailSent
-        ? "Account created successfully. Your sign-in email has been sent. Please check your inbox and spam/junk folder."
-        : "Account created successfully, but the sign-in email could not be sent. Please contact Ocean Trail management or sign in on the website. The email delivery error has been recorded.",
-      emailSent: welcomeEmailSent,
+      message:
+        "Account created successfully. Your welcome email and management notification are being processed. Please check your inbox and spam/junk folder shortly.",
+      emailStatus: "processing",
       signInUrl,
       user: {
         id: createdUser._id,
@@ -2131,10 +2185,8 @@ const registerUser = async (req, res) => {
         apartment: createdUser.apartment,
         isActive: createdUser.isActive,
       },
-      ...(process.env.NODE_ENV !== "production" && emailErrorMessage
-        ? { emailError: emailErrorMessage }
-        : {}),
     });
+
   } catch (error) {
     console.error("Register error:", error);
 
@@ -2163,8 +2215,7 @@ const loginUser = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message:
-          "Email and password are required.",
+        message: "Email and password are required.",
       });
     }
 
@@ -2214,11 +2265,10 @@ const loginUser = async (req, res) => {
     // CHECK PASSWORD
     // ========================================
 
-    const passwordMatch =
-      await bcrypt.compare(
-        password,
-        user.password
-      );
+    const passwordMatch = await bcrypt.compare(
+      password,
+      user.password
+    );
 
     // ========================================
     // WRONG PASSWORD
@@ -2269,6 +2319,7 @@ const loginUser = async (req, res) => {
         isVerified: user.isVerified,
       },
     });
+
   } catch (error) {
     console.error(
       "Login error:",
@@ -2277,8 +2328,7 @@ const loginUser = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Server error while logging in.",
+      message: "Server error while logging in.",
     });
   }
 };
@@ -2291,8 +2341,7 @@ const logoutUser = async (req, res) => {
   try {
     res.clearCookie("token", {
       httpOnly: true,
-      secure:
-        process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production",
       sameSite:
         process.env.NODE_ENV === "production"
           ? "none"
@@ -2303,6 +2352,7 @@ const logoutUser = async (req, res) => {
       success: true,
       message: "Logged out successfully.",
     });
+
   } catch (error) {
     console.error(
       "Logout error:",
@@ -2311,8 +2361,7 @@ const logoutUser = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Server error while logging out.",
+      message: "Server error while logging out.",
     });
   }
 };
@@ -2323,12 +2372,10 @@ const logoutUser = async (req, res) => {
 
 const getMe = async (req, res) => {
   try {
-    const userId =
-      req.user._id || req.user.id;
+    const userId = req.user._id || req.user.id;
 
-    const user = await User.findById(
-      userId
-    ).select("-password");
+    const user = await User.findById(userId)
+      .select("-password");
 
     if (!user) {
       return res.status(404).json({
@@ -2352,6 +2399,7 @@ const getMe = async (req, res) => {
         isVerified: user.isVerified,
       },
     });
+
   } catch (error) {
     console.error(
       "Get user error:",
@@ -2360,8 +2408,7 @@ const getMe = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to retrieve user information.",
+      message: "Unable to retrieve user information.",
     });
   }
 };
@@ -2372,12 +2419,10 @@ const getMe = async (req, res) => {
 
 const getProfile = async (req, res) => {
   try {
-    const userId =
-      req.user._id || req.user.id;
+    const userId = req.user._id || req.user.id;
 
-    const user = await User.findById(
-      userId
-    ).select("-password");
+    const user = await User.findById(userId)
+      .select("-password");
 
     if (!user) {
       return res.status(404).json({
@@ -2401,6 +2446,7 @@ const getProfile = async (req, res) => {
         isVerified: user.isVerified,
       },
     });
+
   } catch (error) {
     console.error(
       "Get profile error:",
@@ -2409,8 +2455,7 @@ const getProfile = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Server error while fetching profile.",
+      message: "Server error while fetching profile.",
     });
   }
 };
@@ -2421,17 +2466,14 @@ const getProfile = async (req, res) => {
 
 const updateProfile = async (req, res) => {
   try {
-    const userId =
-      req.user._id || req.user.id;
+    const userId = req.user._id || req.user.id;
 
     const {
       fullName,
       phone,
     } = req.body;
 
-    const user = await User.findById(
-      userId
-    );
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -2441,8 +2483,7 @@ const updateProfile = async (req, res) => {
     }
 
     if (fullName) {
-      user.fullName =
-        fullName.trim();
+      user.fullName = fullName.trim();
     }
 
     if (phone !== undefined) {
@@ -2453,8 +2494,7 @@ const updateProfile = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message:
-        "Profile updated successfully.",
+      message: "Profile updated successfully.",
       user: {
         id: user._id,
         fullName: user.fullName,
@@ -2468,6 +2508,7 @@ const updateProfile = async (req, res) => {
         isVerified: user.isVerified,
       },
     });
+
   } catch (error) {
     console.error(
       "Update profile error:",
@@ -2476,12 +2517,10 @@ const updateProfile = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Server error while updating profile.",
+      message: "Server error while updating profile.",
     });
   }
 };
-
 
 // ==========================================
 // FORGOT PASSWORD
@@ -2498,7 +2537,9 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    const normalizedEmail = String(email).trim().toLowerCase();
+    const normalizedEmail = String(email)
+      .trim()
+      .toLowerCase();
 
     const user = await User.findOne({
       email: normalizedEmail,
@@ -2507,7 +2548,8 @@ const forgotPassword = async (req, res) => {
     if (!user) {
       return res.status(200).json({
         success: true,
-        message: "If an account exists with this email, a password reset link has been sent.",
+        message:
+          "If an account exists with this email, a password reset link has been sent.",
       });
     }
 
@@ -2519,37 +2561,61 @@ const forgotPassword = async (req, res) => {
       .digest("hex");
 
     user.resetPasswordToken = hashedToken;
-    user.resetPasswordExpire = Date.now() + 15 * 60 * 1000; // 15 minutes
+    user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
 
     await user.save({
       validateBeforeSave: false,
     });
 
-    const clientUrl = process.env.CLIENT_URL || "https://oceantrailcondominium.com/";
+    const clientUrl = (
+      process.env.CLIENT_URL ||
+      "https://oceantrailcondominium.com"
+    ).replace(/\/+$/, "");
+
     const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
 
-    // Always log the reset link to the server terminal for instant development & testing
-    console.log(`\n========================================`);
+    // Always log the reset link to the server terminal for development/testing.
+    console.log("\n========================================");
     console.log(`PASSWORD RESET LINK FOR: ${user.email}`);
     console.log(resetUrl);
-    console.log(`========================================\n`);
+    console.log("========================================\n");
 
     const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 30px;">
-        <h2 style="color:#4B4F93;">Ocean Trail Condominium</h2>
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:30px;">
+
+        <h2 style="color:#4B4F93;">
+          Ocean Trail Condominium
+        </h2>
+
         <p>Hello ${user.fullName},</p>
-        <p>We received a request to reset your Ocean Trail account password.</p>
+
+        <p>
+          We received a request to reset your Ocean Trail account password.
+        </p>
+
         <div style="margin:30px 0;">
-          <a href="${resetUrl}" style="background:#4B4F93; color:white; padding:14px 25px; text-decoration:none; border-radius:6px; display:inline-block;">
+
+          <a
+            href="${resetUrl}"
+            style="background:#4B4F93;color:white;padding:14px 25px;text-decoration:none;border-radius:6px;display:inline-block;"
+          >
             Reset Password
           </a>
+
         </div>
-        <p>This link will expire in <strong>15 minutes</strong>.</p>
-        <p>If you did not request this password reset, you can safely ignore this email.</p>
+
+        <p>
+          This link will expire in <strong>15 minutes</strong>.
+        </p>
+
+        <p>
+          If you did not request this password reset, you can safely ignore this email.
+        </p>
+
       </div>
     `;
 
-    // Attempt to send email, but do not crash the request if SMTP fails
+    // Attempt to send email, but do not crash the request if SMTP fails.
     try {
       if (typeof sendEmail === "function") {
         await sendEmail({
@@ -2558,18 +2624,23 @@ const forgotPassword = async (req, res) => {
           html,
         });
       }
+
     } catch (emailError) {
-      console.warn("SMTP email dispatch skipped/failed, but reset token generated successfully:", emailError.message);
+      console.warn(
+        "SMTP email dispatch skipped/failed, but reset token generated successfully:",
+        emailError.message
+      );
     }
 
     return res.status(200).json({
       success: true,
       message: "Password reset link generated successfully.",
-      testResetUrl: resetUrl // Returned securely so you can test it directly from the UI
+      testResetUrl: resetUrl,
     });
 
   } catch (error) {
     console.error("Forgot password error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Unable to process password reset request.",
@@ -2589,24 +2660,21 @@ const resetPassword = async (req, res) => {
     if (!password) {
       return res.status(400).json({
         success: false,
-        message:
-          "Please provide a new password.",
+        message: "Please provide a new password.",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        message:
-          "Password must be at least 6 characters.",
+        message: "Password must be at least 6 characters.",
       });
     }
 
-    const hashedToken =
-      crypto
-        .createHash("sha256")
-        .update(token)
-        .digest("hex");
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
 
     const user = await User.findOne({
       resetPasswordToken: hashedToken,
@@ -2618,8 +2686,7 @@ const resetPassword = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         success: false,
-        message:
-          "Password reset link is invalid or has expired.",
+        message: "Password reset link is invalid or has expired.",
       });
     }
 
@@ -2645,8 +2712,7 @@ const resetPassword = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message:
-        "Password reset successfully.",
+      message: "Password reset successfully.",
       user: {
         id: user._id,
         fullName: user.fullName,
@@ -2654,6 +2720,7 @@ const resetPassword = async (req, res) => {
         role: user.role,
       },
     });
+
   } catch (error) {
     console.error(
       "Reset password error:",
@@ -2662,8 +2729,7 @@ const resetPassword = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to reset password.",
+      message: "Unable to reset password.",
     });
   }
 };
