@@ -314,8 +314,7 @@ router.post("/", async (req, res) => {
         // EMAIL VALIDATION
         // -------------------------------------------------
 
-        const emailPattern =
-            /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
         if (!emailPattern.test(emailAddress)) {
             return res.status(400).json({
