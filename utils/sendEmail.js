@@ -76,10 +76,6 @@
 // module.exports = sendEmail;
 
 
-
-
-
-
 const nodemailer = require("nodemailer");
 
 // =====================================================
@@ -87,44 +83,41 @@ const nodemailer = require("nodemailer");
 // =====================================================
 
 const createTransporter = () => {
-    const {
-        SMTP_HOST,
-        SMTP_PORT,
-        SMTP_SECURE,
-        SMTP_USER,
-        SMTP_PASS,
-    } = process.env;
+    const host = process.env.SMTP_HOST || "smtp.gmail.com";
+    const port = Number(process.env.SMTP_PORT || 587);
 
-    if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    const secure =
+        process.env.SMTP_SECURE !== undefined
+            ? String(process.env.SMTP_SECURE).toLowerCase() === "true"
+            : port === 465;
+
+    const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+    const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+
+    if (!user || !pass) {
         throw new Error(
-            "SMTP configuration is missing. Check SMTP_HOST, SMTP_USER and SMTP_PASS in Render environment variables."
+            "SMTP authentication missing. Check SMTP_USER and SMTP_PASS in Render."
         );
     }
 
-    const port = Number(SMTP_PORT || 587);
-
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new Error("Invalid SMTP_PORT configuration.");
+    if (![465, 587].includes(port)) {
+        console.warn("Unusual SMTP port configured:", port);
     }
 
-    const secure = String(SMTP_SECURE).toLowerCase() === "true";
-
     return nodemailer.createTransport({
-        host: SMTP_HOST,
+        host,
         port,
         secure,
 
         auth: {
-            user: SMTP_USER,
-            pass: SMTP_PASS,
+            user,
+            pass,
         },
 
-        // Prevent SMTP connection failures from hanging requests.
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
 
-        // Keep normal certificate validation enabled.
         tls: {
             rejectUnauthorized: true,
         },
@@ -141,6 +134,7 @@ const sendEmail = async ({
     html,
     text,
     replyTo,
+    attachments,
 }) => {
     if (!to) {
         throw new Error("Email recipient is required.");
@@ -154,12 +148,15 @@ const sendEmail = async ({
         throw new Error("Email content is required.");
     }
 
+    const senderEmail =
+        process.env.SMTP_USER || process.env.EMAIL_USER;
+
     const transporter = createTransporter();
 
     const mailOptions = {
         from:
             process.env.SMTP_FROM ||
-            `"Ocean Trail Website" <${process.env.SMTP_USER}>`,
+            `"Ocean Trail Condominium" <${senderEmail}>`,
 
         to,
         subject,
@@ -167,22 +164,30 @@ const sendEmail = async ({
         ...(text ? { text } : {}),
         ...(html ? { html } : {}),
         ...(replyTo ? { replyTo } : {}),
+        ...(attachments ? { attachments } : {}),
     };
 
     try {
         const result = await transporter.sendMail(mailOptions);
 
-        console.log("EMAIL SENT SUCCESSFULLY:", {
+        console.log("OCEAN TRAIL EMAIL RESULT:", {
             to,
             subject,
             messageId: result.messageId,
             accepted: result.accepted,
             rejected: result.rejected,
+            response: result.response,
         });
+
+        if (!result.accepted || result.accepted.length === 0) {
+            throw new Error(
+                `SMTP did not accept the email for ${to}.`
+            );
+        }
 
         return result;
     } catch (error) {
-        console.error("EMAIL DELIVERY FAILED:", {
+        console.error("OCEAN TRAIL EMAIL DELIVERY FAILED:", {
             to,
             subject,
             message: error.message,
@@ -190,6 +195,7 @@ const sendEmail = async ({
             command: error.command,
             responseCode: error.responseCode,
             response: error.response,
+            stack: error.stack,
         });
 
         throw error;
@@ -199,23 +205,24 @@ const sendEmail = async ({
 };
 
 // =====================================================
-// SMTP CONNECTION TEST
+// VERIFY SMTP CONNECTION
 // =====================================================
 
 sendEmail.verifyConnection = async () => {
     const transporter = createTransporter();
 
     try {
-        const result = await transporter.verify();
+        await transporter.verify();
 
-        console.log("SMTP CONNECTION VERIFIED SUCCESSFULLY.");
+        console.log(
+            "OCEAN TRAIL SMTP CONNECTION VERIFIED SUCCESSFULLY."
+        );
 
-        return result;
+        return true;
     } catch (error) {
-        console.error("SMTP CONNECTION VERIFICATION FAILED:", {
+        console.error("OCEAN TRAIL SMTP VERIFICATION FAILED:", {
             message: error.message,
             code: error.code,
-            command: error.command,
             responseCode: error.responseCode,
             response: error.response,
         });
